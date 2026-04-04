@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from typing import Literal
 from sklearn.model_selection import train_test_split
+from keras.layers import Conv2D, Flatten, Dense, Input
 
 class DataLoader(keras.utils.Sequence):
     def __init__(self, directory: os.PathLike, subset: Literal["training", "validation"], test_split: float, seed: int, batch_size: int, image_size: tuple[int, int], bins = None, bin_threshold = 200):
@@ -106,21 +107,24 @@ class DataLoader(keras.utils.Sequence):
                     steering = -steering                        # If the image was flipped, flip the steering angle as well
 
                 # Random Brightness / Contrast
-                brightness = np.random.randint(-50, 50)
-                contrast = np.random.uniform(0.5, 1.5)
-                image = cv2.convertScaleAbs(image, alpha=contrast, beta=brightness)
+                if np.random.random() < 0.5:
+                    brightness = np.random.randint(-20, 20)
+                    contrast = np.random.uniform(0.8, 1.2)
+                    image = cv2.convertScaleAbs(image, alpha=contrast, beta=brightness)
 
                 # Random Panning
-                tx = np.random.uniform(-0.1,0.1) * image.shape[1]
-                ty = np.random.uniform(-0.1,0.1) * image.shape[0]
-                M = np.float32([[1, 0, tx], [0, 1, ty]])
-                image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+                if np.random.random() < 0.5:
+                    tx = np.random.uniform(-0.1,0.1) * image.shape[1]
+                    ty = np.random.uniform(-0.1,0.1) * image.shape[0]
+                    M = np.float32([[1, 0, tx], [0, 1, ty]])
+                    image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
 
                 # Random Rotation & Zoom
-                angle = np.random.uniform(-15, 15)
-                scale = np.random.uniform(1, 1.5)
-                M = cv2.getRotationMatrix2D((image.shape[1] / 2, image.shape[0] / 2), angle, scale)
-                image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+                if np.random.random() < 0.5:
+                    angle = np.random.uniform(-5, 5)
+                    scale = np.random.uniform(1.0, 1.1)
+                    M = cv2.getRotationMatrix2D((image.shape[1] / 2, image.shape[0] / 2), angle, scale)
+                    image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
 
             image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)      # Convert to YUV color space
             image = image / 255.0                               # Normalize pixel values to [0, 1]
@@ -131,3 +135,17 @@ class DataLoader(keras.utils.Sequence):
         return np.array(images), np.array(steering_angles)
 
 
+NvidiaCNN = keras.Sequential([
+    Input(shape=(66, 200, 3)),
+    Conv2D(filters=24, kernel_size=(5, 5), strides=2, activation="relu", padding="valid"),
+    Conv2D(filters=36, kernel_size=(5, 5), strides=2, activation="relu", padding="valid"),
+    Conv2D(filters=48, kernel_size=(5, 5), strides=2, activation="relu", padding="valid"),
+    Conv2D(filters=64, kernel_size=(3, 3), strides=1, activation="relu", padding="valid"),
+    Conv2D(filters=64, kernel_size=(3, 3), strides=1, activation="relu", padding="valid"),
+    Flatten(),
+    Dense(1164, activation="relu"),
+    Dense(100, activation="relu"),
+    Dense(50, activation="relu"),
+    Dense(10, activation="relu"),
+    Dense(1)
+])
