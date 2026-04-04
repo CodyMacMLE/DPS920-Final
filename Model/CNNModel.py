@@ -1,14 +1,12 @@
 # External Imports
 import glob
+import cv2
 import keras
 import os
 import numpy as np
 import pandas as pd
 from typing import Literal
 from sklearn.model_selection import train_test_split
-
-# Internal Imports
-
 
 class DataLoader(keras.utils.Sequence):
     def __init__(self, directory: os.PathLike, subset: Literal["training", "validation"], test_split: float, seed: int, batch_size: int, image_size: tuple[int, int], bins = None, bin_threshold = 200):
@@ -93,18 +91,43 @@ class DataLoader(keras.utils.Sequence):
         images = []
         steering_angles = []
 
-        for _, row in batch_data.iterrows():
-            image_path = row["center"]
-
-            # Basic transforms
-            image = keras.preprocessing.image.load_img(image_path, target_size=self.image_size)     # Load img
-            image_array = keras.preprocessing.image.img_to_array(image) / 255.0                     # Normalize pixel values to [0, 1]
+        for image, steering in zip(batch_data["center"], batch_data["steering"]):
+            # Basic preprocessing
+            image = cv2.imread(image)                                       # Load image
+            image = image[60:135, :, :]                                     # Crop the image to remove the sky and the hood of the car
+            image = cv2.resize(image, self.image_size)                      # Resize image
+            image = cv2.GaussianBlur(image, (5, 5), 0)        # Gaussian Blur
 
             # Augments
             if self.subset == "training":
-                pass
+                # Randomly flip the image (Over Vertical)
+                if np.random.random() < 0.5:
+                    image = cv2.flip(image, 1)
+                    steering = -steering                        # If the image was flipped, flip the steering angle as well
 
-            images.append(image_array)
-            steering_angles.append(row["steering"])
+                # Random Brightness / Contrast
+                brightness = np.random.randint(-50, 50)
+                contrast = np.random.uniform(0.5, 1.5)
+                image = cv2.convertScaleAbs(image, alpha=contrast, beta=brightness)
+
+                # Random Panning
+                tx = np.random.uniform(-0.1,0.1) * image.shape[1]
+                ty = np.random.uniform(-0.1,0.1) * image.shape[0]
+                M = np.float32([[1, 0, tx], [0, 1, ty]])
+                image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+
+                # Random Rotation & Zoom
+                angle = np.random.uniform(-15, 15)
+                scale = np.random.uniform(1, 1.5)
+                M = cv2.getRotationMatrix2D((image.shape[1] / 2, image.shape[0] / 2), angle, scale)
+                image = cv2.warpAffine(image, M, (image.shape[1], image.shape[0]))
+
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)      # Convert to YUV color space
+            image = image / 255.0                               # Normalize pixel values to [0, 1]
+
+            images.append(image)
+            steering_angles.append(steering)
 
         return np.array(images), np.array(steering_angles)
+
+
